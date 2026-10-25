@@ -1,0 +1,15 @@
+D:\lawyer-app\products-api\Products.Application\obj\Debug\net8.0\Products.Application.csproj.AssemblyReference.cache
+D:\lawyer-app\products-api\Products.Application\obj\Debug\net8.0\Products.Application.GeneratedMSBuildEditorConfig.editorconfig
+D:\lawyer-app\products-api\Products.Application\obj\Debug\net8.0\Products.Application.AssemblyInfoInputs.cache
+D:\lawyer-app\products-api\Products.Application\obj\Debug\net8.0\Products.Application.AssemblyInfo.cs
+D:\lawyer-app\products-api\Products.Application\obj\Debug\net8.0\Products.Application.csproj.CoreCompileInputs.cache
+D:\lawyer-app\products-api\Products.Application\bin\Debug\net8.0\Products.Application.deps.json
+D:\lawyer-app\products-api\Products.Application\bin\Debug\net8.0\Products.Application.dll
+D:\lawyer-app\products-api\Products.Application\bin\Debug\net8.0\Products.Application.pdb
+D:\lawyer-app\products-api\Products.Application\bin\Debug\net8.0\Products.Domain.dll
+D:\lawyer-app\products-api\Products.Application\bin\Debug\net8.0\Products.Domain.pdb
+D:\lawyer-app\products-api\Products.Application\obj\Debug\net8.0\Products.B05A2103.Up2Date
+D:\lawyer-app\products-api\Products.Application\obj\Debug\net8.0\Products.Application.dll
+D:\lawyer-app\products-api\Products.Application\obj\Debug\net8.0\refint\Products.Application.dll
+D:\lawyer-app\products-api\Products.Application\obj\Debug\net8.0\Products.Application.pdb
+D:\lawyer-app\products-api\Products.Application\obj\Debug\net8.0\ref\Products.Application.dll

@@ -1,0 +1,11 @@
+D:\lawyer-app\products-api\Products.Domain\bin\Debug\net8.0\Products.Domain.deps.json
+D:\lawyer-app\products-api\Products.Domain\bin\Debug\net8.0\Products.Domain.dll
+D:\lawyer-app\products-api\Products.Domain\bin\Debug\net8.0\Products.Domain.pdb
+D:\lawyer-app\products-api\Products.Domain\obj\Debug\net8.0\Products.Domain.GeneratedMSBuildEditorConfig.editorconfig
+D:\lawyer-app\products-api\Products.Domain\obj\Debug\net8.0\Products.Domain.AssemblyInfoInputs.cache
+D:\lawyer-app\products-api\Products.Domain\obj\Debug\net8.0\Products.Domain.AssemblyInfo.cs
+D:\lawyer-app\products-api\Products.Domain\obj\Debug\net8.0\Products.Domain.csproj.CoreCompileInputs.cache
+D:\lawyer-app\products-api\Products.Domain\obj\Debug\net8.0\Products.Domain.dll
+D:\lawyer-app\products-api\Products.Domain\obj\Debug\net8.0\refint\Products.Domain.dll
+D:\lawyer-app\products-api\Products.Domain\obj\Debug\net8.0\Products.Domain.pdb
+D:\lawyer-app\products-api\Products.Domain\obj\Debug\net8.0\ref\Products.Domain.dll
