@@ -20,10 +20,18 @@ public class LawyerService {
     }
 
     public Lawyer createLawyer(Lawyer lawyer) {
+        // اسم المستخدم بيتخزن lowercase عشان "Ahmed" و "ahmed" يبقوا نفس الحساب
+        String username = lawyer.getUsername().trim().toLowerCase();
+
+        if (lawyerRepository.existsByUsername(username)) {
+            throw new IllegalArgumentException("Username already exists");
+        }
+
         if (lawyerRepository.existsByEmail(lawyer.getEmail())) {
             throw new IllegalArgumentException("Email already exists");
         }
 
+        lawyer.setUsername(username);
         lawyer.setPassword(passwordEncoder.encode(lawyer.getPassword()));
         return lawyerRepository.save(lawyer);
     }

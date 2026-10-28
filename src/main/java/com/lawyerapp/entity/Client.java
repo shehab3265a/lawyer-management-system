@@ -1,4 +1,6 @@
+
 package com.lawyerapp.entity;
+
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.Email;
@@ -12,18 +14,20 @@ public class Client {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    @NotBlank 
-    @Column(nullable = false)
+
+    @NotBlank
+    @Column(name = "full_name", nullable = false)
     private String fullName;
 
     private String phone;
-    @Email 
+
+    @Email
     private String email;
 
     private String address;
 
-    @Column(nullable = false)
-    private String notes;
+    @Column(nullable = false, columnDefinition = "TEXT")
+    private String notes = "";
 
     public Client() {
     }

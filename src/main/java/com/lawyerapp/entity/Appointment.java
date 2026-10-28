@@ -1,35 +1,37 @@
 
 package com.lawyerapp.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import java.time.LocalDate;
 import java.time.LocalTime;
 
 @Entity
 @Table(name = "appointments")
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 public class Appointment {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
-    private String title;
-
+    @Column(columnDefinition = "TEXT")
     private String description;
 
-    @Column(nullable = false)
+    @Column(name = "appointment_date", nullable = false)
     private LocalDate appointmentDate;
 
+    @Column(name = "appointment_time")
     private LocalTime appointmentTime;
 
     private String location;
 
     @Column(nullable = false)
-    private String status = "Scheduled";
+    private String status = "SCHEDULED";
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "case_id")
+    @JoinColumn(name = "case_id", nullable = false)
+    @JsonIgnoreProperties({"client", "hibernateLazyInitializer", "handler"})
     private Case legalCase;
 
     public Appointment() {
@@ -41,14 +43,6 @@ public class Appointment {
 
     public void setId(Long id) {
         this.id = id;
-    }
-
-    public String getTitle() {
-        return title;
-    }
-
-    public void setTitle(String title) {
-        this.title = title;
     }
 
     public String getDescription() {

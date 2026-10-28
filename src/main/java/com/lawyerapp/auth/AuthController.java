@@ -1,4 +1,3 @@
-
 package com.lawyerapp.auth;
 
 import com.lawyerapp.entity.Lawyer;
@@ -26,26 +25,28 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> request) {
-        String email = request.get("email");
+        String username = request.get("username");
         String password = request.get("password");
 
-        if (email == null || password == null) {
+        if (username == null || password == null) {
             return ResponseEntity.badRequest()
-                    .body(Map.of("message", "Email and password are required"));
+                    .body(Map.of("message", "Username and password are required"));
         }
 
-        Lawyer lawyer = lawyerRepository.findByEmail(email.trim())
+        Lawyer lawyer = lawyerRepository
+                .findByUsername(username.trim().toLowerCase())
                 .orElse(null);
 
         if (lawyer == null || !passwordEncoder.matches(password, lawyer.getPassword())) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("message", "Invalid email or password"));
+                    .body(Map.of("message", "Invalid username or password"));
         }
 
         return ResponseEntity.ok(Map.of(
                 "message", "Login successful",
                 "lawyerId", lawyer.getId(),
                 "fullName", lawyer.getFullName(),
+                "username", lawyer.getUsername(),
                 "email", lawyer.getEmail()
         ));
     }

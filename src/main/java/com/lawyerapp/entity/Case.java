@@ -8,35 +8,48 @@ import java.time.LocalDate;
 @Entity
 @Table(name = "legal_cases")
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
-
 public class Case {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
+    @Column(name = "case_number")
     private String caseNumber;
 
     @Column(nullable = false)
     private String title;
 
+    @Column(name = "court_name")
     private String courtName;
 
+    @Column(name = "case_type")
     private String caseType;
 
-    private String status;
+    @Column(nullable = false)
+    private String status = "OPEN";
 
+    @Column(name = "start_date")
     private LocalDate startDate;
 
+    @Column(name = "next_hearing_date")
     private LocalDate nextHearingDate;
 
     @Column(columnDefinition = "TEXT")
     private String notes;
 
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id", nullable = false)
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
     private Client client;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "lawyer_id", nullable = false)
+    @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
+    private Lawyer lawyer;
 
     public Case() {
     }
@@ -113,6 +126,14 @@ public class Case {
         this.notes = notes;
     }
 
+    public String getDescription() {
+        return description;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
     public Client getClient() {
         return client;
     }
@@ -120,4 +141,13 @@ public class Case {
     public void setClient(Client client) {
         this.client = client;
     }
+
+    public Lawyer getLawyer() {
+        return lawyer;
+    }
+
+    public void setLawyer(Lawyer lawyer) {
+        this.lawyer = lawyer;
+    }
 }
+

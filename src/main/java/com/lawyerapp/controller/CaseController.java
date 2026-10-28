@@ -23,8 +23,9 @@ public class CaseController {
     @ResponseStatus(HttpStatus.CREATED)
     public Case createCase(
             @RequestParam Long clientId,
+            @RequestParam Long lawyerId,
             @Valid @RequestBody Case legalCase) {
-        return caseService.createCase(legalCase, clientId);
+        return caseService.createCase(legalCase, clientId, lawyerId);
     }
 
     @GetMapping
@@ -41,8 +42,9 @@ public class CaseController {
     public Case updateCase(
             @PathVariable Long id,
             @RequestParam Long clientId,
+            @RequestParam Long lawyerId,
             @Valid @RequestBody Case legalCase) {
-        return caseService.updateCase(id, legalCase, clientId);
+        return caseService.updateCase(id, legalCase, clientId, lawyerId);
     }
 
     @DeleteMapping("/{id}")

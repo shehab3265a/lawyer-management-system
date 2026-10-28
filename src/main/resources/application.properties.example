@@ -1,0 +1,10 @@
+
+spring.application.name=lawyer-app
+
+spring.datasource.url=jdbc:postgresql://localhost:5432/lawyer_management_v2
+spring.datasource.username=postgres
+spring.datasource.password=YOUR_PASSWORD
+
+spring.jpa.hibernate.ddl-auto=none
+spring.jpa.show-sql=true
+spring.jpa.properties.hibernate.format_sql=true

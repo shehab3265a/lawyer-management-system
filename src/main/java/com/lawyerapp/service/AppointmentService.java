@@ -46,7 +46,6 @@ public class AppointmentService {
             Long id, Appointment updatedAppointment, Long caseId) {
         Appointment appointment = getAppointmentById(id);
 
-        appointment.setTitle(updatedAppointment.getTitle());
         appointment.setDescription(updatedAppointment.getDescription());
         appointment.setAppointmentDate(updatedAppointment.getAppointmentDate());
         appointment.setAppointmentTime(updatedAppointment.getAppointmentTime());
@@ -57,8 +56,6 @@ public class AppointmentService {
             Case legalCase = caseRepository.findById(caseId)
                     .orElseThrow(() -> new ResourceNotFoundException("Case not found"));
             appointment.setLegalCase(legalCase);
-        } else {
-            appointment.setLegalCase(null);
         }
 
         return appointmentRepository.save(appointment);
