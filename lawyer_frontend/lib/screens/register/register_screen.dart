@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../../config.dart';
+
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
@@ -13,7 +15,7 @@ class RegisterScreen extends StatefulWidget {
 }
 
 class _RegisterScreenState extends State<RegisterScreen> {
-  static const String _baseUrl = 'http://localhost:8080/api';
+  static String get _baseUrl => AppConfig.baseUrl;
   static const Color _primaryColor = Color(0xFF173B57);
 
   final _formKey = GlobalKey<FormState>();
@@ -201,8 +203,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             textInputAction: TextInputAction.next,
                             decoration: const InputDecoration(
                               labelText: 'اسم المستخدم',
-                              helperText:
-                                  'إنجليزي، 8 أحرف على الأقل (حروف وأرقام و @ _ -)',
+                              helperText: 'إنجليزي، 8 أحرف على الأقل (حروف وأرقام و @ _ -)',
                               helperMaxLines: 2,
                               prefixIcon: Icon(Icons.badge_outlined),
                               border: OutlineInputBorder(),
@@ -219,7 +220,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                               if (text.length > 50) {
                                 return 'اسم المستخدم طويل جدًا';
                               }
-                              if (!RegExp(r'^[A-Za-z0-9@_-]+$').hasMatch(text)) {
+                              if (!RegExp(r'^[A-Za-z0-9@_-]+$')
+                                  .hasMatch(text)) {
                                 return 'استخدم حروفًا إنجليزية وأرقامًا والرموز @ _ - فقط';
                               }
 

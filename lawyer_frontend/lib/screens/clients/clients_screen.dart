@@ -1,7 +1,10 @@
-
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+
+import '../../config.dart';
+import '../../data/data_repository.dart';
+import '../../widgets/offline_banner.dart';
 
 class ClientsScreen extends StatefulWidget {
   const ClientsScreen({super.key});
@@ -11,13 +14,15 @@ class ClientsScreen extends StatefulWidget {
 }
 
 class _ClientsScreenState extends State<ClientsScreen> {
-  static const String _baseUrl = 'http://localhost:8080/api/clients';
+  static String get _baseUrl => '${AppConfig.baseUrl}/clients';
 
   final TextEditingController _searchController = TextEditingController();
 
   List<Map<String, dynamic>> _clients = [];
   bool _isLoading = true;
   bool _isSaving = false;
+  bool _fromCache = false;
+  DateTime? _cacheTime;
   String? _errorMessage;
 
   @override
@@ -48,6 +53,15 @@ class _ClientsScreenState extends State<ClientsScreen> {
     return error.toString().replaceFirst('Exception: ', '');
   }
 
+  bool _blockIfOffline() {
+    if (!_fromCache) return false;
+
+    _showMessage(
+      'أنت غير متصل بالخادم. الإضافة والتعديل والحذف تحتاج اتصالًا، جرّب بعد عودة الاتصال.',
+    );
+    return true;
+  }
+
   Future<void> _loadClients() async {
     setState(() {
       _isLoading = true;
@@ -55,22 +69,15 @@ class _ClientsScreenState extends State<ClientsScreen> {
     });
 
     try {
-      final response = await http
-          .get(Uri.parse(_baseUrl))
-          .timeout(const Duration(seconds: 15));
-
-      if (response.statusCode != 200) {
-        throw Exception('فشل تحميل العملاء (${response.statusCode})');
-      }
-
-      final List<dynamic> data = jsonDecode(response.body);
+      final result = await DataRepository.getList('clients');
 
       if (!mounted) return;
 
       setState(() {
-        _clients = data.map((item) {
-          final client = Map<String, dynamic>.from(item);
+        _fromCache = result.fromCache;
+        _cacheTime = result.savedAt;
 
+        _clients = result.items.map((client) {
           return {
             'id': client['id'],
             'name': client['fullName']?.toString() ?? '',
@@ -107,6 +114,8 @@ class _ClientsScreenState extends State<ClientsScreen> {
   }
 
   Future<void> _showAddClientDialog() async {
+    if (_blockIfOffline()) return;
+
     final result = await showDialog<Map<String, String>>(
       context: context,
       builder: (_) => const _ClientDialog(),
@@ -147,6 +156,8 @@ class _ClientsScreenState extends State<ClientsScreen> {
   Future<void> _showEditClientDialog(
     Map<String, dynamic> client,
   ) async {
+    if (_blockIfOffline()) return;
+
     final result = await showDialog<Map<String, String>>(
       context: context,
       builder: (_) => _ClientDialog(client: {
@@ -192,6 +203,8 @@ class _ClientsScreenState extends State<ClientsScreen> {
   Future<void> _confirmDeleteClient(
     Map<String, dynamic> client,
   ) async {
+    if (_blockIfOffline()) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
@@ -226,6 +239,12 @@ class _ClientsScreenState extends State<ClientsScreen> {
       final response = await http
           .delete(Uri.parse('$_baseUrl/${client['id']}'))
           .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 409) {
+        throw Exception(
+          'لا يمكن حذف العميل لأن لديه قضايا مرتبطة. احذف قضاياه أولًا.',
+        );
+      }
 
       if (response.statusCode != 204 && response.statusCode != 200) {
         throw Exception('فشل حذف العميل (${response.statusCode})');
@@ -299,6 +318,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
                         ],
                       ),
                       const SizedBox(height: 24),
+                      if (_fromCache) OfflineBanner(savedAt: _cacheTime),
                       Card(
                         color: Colors.white,
                         elevation: 1,

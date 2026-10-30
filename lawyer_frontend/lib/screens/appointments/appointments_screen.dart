@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import '../../config.dart';
+import '../../data/data_repository.dart';
+import '../../widgets/offline_banner.dart';
 // القيم المسموحة في الداتا بيز (chk_appointments_status):
 // SCHEDULED / COMPLETED / CANCELLED
 String _statusToArabic(dynamic status) {
@@ -61,7 +64,7 @@ class AppointmentsScreen extends StatefulWidget {
 }
 
 class _AppointmentsScreenState extends State<AppointmentsScreen> {
-  static const String _baseUrl = 'http://localhost:8080/api';
+  static String get _baseUrl => AppConfig.baseUrl;
 
   final TextEditingController _searchController = TextEditingController();
 
@@ -69,6 +72,8 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   List<Map<String, dynamic>> _cases = [];
 
   bool _isLoading = true;
+  bool _fromCache = false;
+  DateTime? _cacheTime;
   String? _error;
 
   @override
@@ -83,6 +88,16 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     super.dispose();
   }
 
+  bool _blockIfOffline() {
+    if (!_fromCache) return false;
+
+    _showMessage(
+      'أنت غير متصل بالخادم. الإضافة والتعديل والحذف تحتاج اتصالًا، جرّب بعد عودة الاتصال.',
+      isError: true,
+    );
+    return true;
+  }
+
   Future<void> _loadData() async {
     if (mounted) {
       setState(() {
@@ -92,22 +107,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     }
 
     try {
-      final responses = await Future.wait([
-        http.get(Uri.parse('$_baseUrl/appointments')),
-        http.get(Uri.parse('$_baseUrl/cases')),
-      ]).timeout(const Duration(seconds: 15));
+      final results = await Future.wait([
+        DataRepository.getList('appointments'),
+        DataRepository.getList('cases'),
+      ]);
 
-      if (responses[0].statusCode != 200 || responses[1].statusCode != 200) {
-        throw Exception('تعذر تحميل المواعيد أو القضايا');
-      }
-
-      final appointmentsData =
-          jsonDecode(utf8.decode(responses[0].bodyBytes)) as List;
-      final casesData = jsonDecode(utf8.decode(responses[1].bodyBytes)) as List;
-
-      final appointments = appointmentsData
-          .map((item) => Map<String, dynamic>.from(item as Map))
-          .toList();
+      final appointments = List<Map<String, dynamic>>.from(results[0].items);
 
       // ترتيب حسب التاريخ ثم الوقت
       appointments.sort((a, b) {
@@ -120,9 +125,12 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
 
       setState(() {
         _appointments = appointments;
-        _cases = casesData
-            .map((item) => Map<String, dynamic>.from(item as Map))
-            .toList();
+        _cases = results[1].items;
+        _fromCache = results[0].fromCache || results[1].fromCache;
+        _cacheTime = DataRepository.oldest(
+          results[0].savedAt,
+          results[1].savedAt,
+        );
         _isLoading = false;
       });
     } catch (_) {
@@ -201,6 +209,8 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   Future<void> _showAppointmentDialog({
     Map<String, dynamic>? existingAppointment,
   }) async {
+    if (_blockIfOffline()) return;
+
     if (_cases.isEmpty) {
       _showMessage('أضف قضية أولًا قبل تسجيل موعد', isError: true);
       return;
@@ -256,6 +266,8 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   }
 
   Future<void> _confirmDelete(Map<String, dynamic> appointment) async {
+    if (_blockIfOffline()) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => Directionality(
@@ -503,6 +515,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                           style: TextStyle(color: Colors.grey, fontSize: 15),
                         ),
                         const SizedBox(height: 24),
+                        if (_fromCache) OfflineBanner(savedAt: _cacheTime),
                         TextField(
                           controller: _searchController,
                           onChanged: (_) => setState(() {}),

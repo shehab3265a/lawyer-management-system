@@ -3,6 +3,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import '../../config.dart';
+import '../../data/local_cache.dart';
+import '../../services/session_service.dart';
+
 import '../dashboard/dashboard_screen.dart';
 import '../register/register_screen.dart';
 
@@ -19,6 +23,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
 
   bool _obscurePassword = true;
+  bool _rememberMe = false;
   bool _isLoading = false;
 
   @override
@@ -46,7 +51,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final response = await http
           .post(
-            Uri.parse('http://localhost:8080/api/auth/login'),
+            Uri.parse('${AppConfig.baseUrl}/auth/login'),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'username': _usernameController.text.trim(),
@@ -66,12 +71,32 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
 
       if (response.statusCode == 200) {
+        final fullName = data['fullName'].toString();
+        final email = data['email'].toString();
+        final lawyerId = (data['lawyerId'] as num).toInt();
+
+        // نمسح أي بيانات محفوظة لمستخدم قبل كده
+        await LocalCache.clear();
+
+        // تذكرني: نحفظ بيانات الدخول (من غير الباسورد) أو نمسح أي جلسة قديمة
+        if (_rememberMe) {
+          await SessionService.save(
+            lawyerId: lawyerId,
+            fullName: fullName,
+            email: email,
+          );
+        } else {
+          await SessionService.clear();
+        }
+
+        if (!mounted) return;
+
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (context) => DashboardScreen(
-              fullName: data['fullName'],
-              email: data['email'],
-              lawyerId: (data['lawyerId'] as num).toInt(),
+              fullName: fullName,
+              email: email,
+              lawyerId: lawyerId,
             ),
           ),
         );
@@ -190,7 +215,22 @@ class _LoginScreenState extends State<LoginScreen> {
                               return null;
                             },
                           ),
-                          const SizedBox(height: 26),
+                          const SizedBox(height: 8),
+                          CheckboxListTile(
+                            value: _rememberMe,
+                            onChanged: _isLoading
+                                ? null
+                                : (value) {
+                                    setState(() {
+                                      _rememberMe = value ?? false;
+                                    });
+                                  },
+                            title: const Text('تذكرني'),
+                            contentPadding: EdgeInsets.zero,
+                            controlAffinity: ListTileControlAffinity.leading,
+                            activeColor: const Color(0xFF173B57),
+                          ),
+                          const SizedBox(height: 12),
                           SizedBox(
                             height: 52,
                             child: FilledButton(

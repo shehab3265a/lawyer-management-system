@@ -1,14 +1,18 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 
+import '../../data/data_repository.dart';
+import '../../data/local_cache.dart';
+import '../../services/session_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/offline_banner.dart';
+import '../appointments/appointments_screen.dart';
+import '../cases/cases_screen.dart';
+import '../clients/clients_screen.dart';
 import '../login/login_screen.dart';
 import '../settings/settings_screen.dart';
-import '../clients/clients_screen.dart';
-import '../cases/cases_screen.dart';
-import '../appointments/appointments_screen.dart';
 
+/// الإطار الرئيسي للتطبيق: شريط تنقل سفلي + 5 تبويبات.
+/// (الاسم والـ constructor زي ما كانوا عشان login و register و main مايتغيروش)
 class DashboardScreen extends StatefulWidget {
   final String fullName;
   final String email;
@@ -26,26 +30,121 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  static const String _baseUrl = 'http://localhost:8080/api';
-  static const Color _primaryColor = Color(0xFF173B57);
+  int _index = 0;
 
+  void _goTo(int index) {
+    if (index == _index) return;
+    setState(() => _index = index);
+  }
+
+  // كل تبويب بيتبني من جديد عند فتحه، فالبيانات بتتحدث دايمًا
+  Widget _buildPage() {
+    switch (_index) {
+      case 1:
+        return const ClientsScreen();
+      case 2:
+        return CasesScreen(lawyerId: widget.lawyerId);
+      case 3:
+        return const AppointmentsScreen();
+      case 4:
+        return _MoreTab(fullName: widget.fullName, email: widget.email);
+      default:
+        return _HomeTab(
+          fullName: widget.fullName,
+          email: widget.email,
+          onOpenTab: _goTo,
+        );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: PopScope(
+        // زر الرجوع في الأندرويد: من أي تبويب يرجّع للرئيسية بدل ما يقفل التطبيق
+        canPop: _index == 0,
+        onPopInvokedWithResult: (didPop, result) {
+          if (!didPop) _goTo(0);
+        },
+        child: Scaffold(
+          body: _buildPage(),
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: _index,
+            onDestinationSelected: _goTo,
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home),
+                label: 'الرئيسية',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.people_outline),
+                selectedIcon: Icon(Icons.people),
+                label: 'العملاء',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.gavel_outlined),
+                selectedIcon: Icon(Icons.gavel),
+                label: 'القضايا',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.calendar_month_outlined),
+                selectedIcon: Icon(Icons.calendar_month),
+                label: 'المواعيد',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.menu),
+                selectedIcon: Icon(Icons.menu),
+                label: 'المزيد',
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// الرئيسية
+// ---------------------------------------------------------------------------
+
+class _HomeTab extends StatefulWidget {
+  final String fullName;
+  final String email;
+  final ValueChanged<int> onOpenTab;
+
+  const _HomeTab({
+    required this.fullName,
+    required this.email,
+    required this.onOpenTab,
+  });
+
+  @override
+  State<_HomeTab> createState() => _HomeTabState();
+}
+
+class _HomeTabState extends State<_HomeTab> {
   bool _isLoading = true;
+  bool _fromCache = false;
+  DateTime? _cacheTime;
   String? _error;
 
   int _clientsCount = 0;
-  int _casesCount = 0;
   int _activeCasesCount = 0;
   int _upcomingCount = 0;
 
   List<Map<String, dynamic>> _upcomingAppointments = [];
+  List<Map<String, dynamic>> _reminders = [];
 
   @override
   void initState() {
     super.initState();
-    _loadStats();
+    _load();
   }
 
-  Future<void> _loadStats() async {
+  Future<void> _load() async {
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -54,46 +153,44 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     try {
-      final responses = await Future.wait([
-        http.get(Uri.parse('$_baseUrl/clients')),
-        http.get(Uri.parse('$_baseUrl/cases')),
-        http.get(Uri.parse('$_baseUrl/appointments')),
-      ]).timeout(const Duration(seconds: 15));
+      final results = await Future.wait([
+        DataRepository.getList('clients'),
+        DataRepository.getList('cases'),
+        DataRepository.getList('appointments'),
+      ]);
 
-      for (final response in responses) {
-        if (response.statusCode != 200) {
-          throw Exception('Failed to load dashboard data');
-        }
+      final clients = results[0].items;
+      final cases = results[1].items;
+      final appointments = results[2].items;
+
+      final fromCache = results.any((result) => result.fromCache);
+      DateTime? cacheTime;
+      for (final result in results) {
+        cacheTime = DataRepository.oldest(cacheTime, result.savedAt);
       }
 
-      final clients = jsonDecode(utf8.decode(responses[0].bodyBytes)) as List;
-      final cases = (jsonDecode(utf8.decode(responses[1].bodyBytes)) as List)
-          .map((item) => Map<String, dynamic>.from(item as Map))
-          .toList();
-      final appointments =
-          (jsonDecode(utf8.decode(responses[2].bodyBytes)) as List)
-              .map((item) => Map<String, dynamic>.from(item as Map))
-              .toList();
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final todayText =
+          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
       // القضايا الجارية = أي قضية حالتها مش CLOSED
       final activeCases = cases
           .where((c) => c['status']?.toString().toUpperCase() != 'CLOSED')
-          .length;
+          .toList();
 
-      // المواعيد القادمة = حالتها SCHEDULED وتاريخها اليوم أو بعده
-      final now = DateTime.now();
-      final today =
-          '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-
+      // المواعيد القادمة = SCHEDULED وتاريخها اليوم أو بعده
       final upcoming = appointments.where((a) {
         final status = a['status']?.toString().toUpperCase();
         final date = a['appointmentDate']?.toString() ?? '';
-        return status == 'SCHEDULED' && date.compareTo(today) >= 0;
+        return status == 'SCHEDULED' && date.compareTo(todayText) >= 0;
       }).toList();
 
       upcoming.sort((a, b) {
-        final first = '${a['appointmentDate'] ?? ''} ${a['appointmentTime'] ?? ''}';
-        final second = '${b['appointmentDate'] ?? ''} ${b['appointmentTime'] ?? ''}';
+        final first =
+            '${a['appointmentDate'] ?? ''} ${a['appointmentTime'] ?? ''}';
+        final second =
+            '${b['appointmentDate'] ?? ''} ${b['appointmentTime'] ?? ''}';
         return first.compareTo(second);
       });
 
@@ -104,7 +201,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       final upcomingWithCase = upcoming.map((a) {
         final legalCase = a['legalCase'];
-        final caseId = legalCase is Map ? (legalCase['id'] as num?)?.toInt() : null;
+        final caseId =
+            legalCase is Map ? (legalCase['id'] as num?)?.toInt() : null;
 
         return {
           ...a,
@@ -112,14 +210,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
         };
       }).toList();
 
+      // تذكيرات: قضايا جارية جلستها القادمة خلال 14 يوم
+      final reminders = <Map<String, dynamic>>[];
+      for (final c in activeCases) {
+        final date = DateTime.tryParse(c['nextHearingDate']?.toString() ?? '');
+        if (date == null) continue;
+
+        final days =
+            DateTime(date.year, date.month, date.day).difference(today).inDays;
+
+        if (days < 0 || days > 14) continue;
+
+        reminders.add({...c, '_days': days});
+      }
+      reminders.sort(
+        (a, b) => (a['_days'] as int).compareTo(b['_days'] as int),
+      );
+
       if (!mounted) return;
 
       setState(() {
+        _fromCache = fromCache;
+        _cacheTime = cacheTime;
         _clientsCount = clients.length;
-        _casesCount = cases.length;
-        _activeCasesCount = activeCases;
+        _activeCasesCount = activeCases.length;
         _upcomingCount = upcoming.length;
-        _upcomingAppointments = upcomingWithCase.take(5).toList();
+        _upcomingAppointments = upcomingWithCase.take(3).toList();
+        _reminders = reminders.take(3).toList();
         _isLoading = false;
       });
     } catch (_) {
@@ -130,16 +247,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _error = 'تعذر تحميل البيانات. تأكد من تشغيل الـ Backend.';
       });
     }
-  }
-
-  // يفتح شاشة، وبعد الرجوع منها يحدّث الأرقام
-  Future<void> _openScreen(Widget screen) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => screen),
-    );
-
-    if (mounted) _loadStats();
   }
 
   String _statValue(int value) {
@@ -171,334 +278,623 @@ class _DashboardScreenState extends State<DashboardScreen> {
         '${minute.toString().padLeft(2, '0')} $period';
   }
 
+  String _daysText(int days) {
+    if (days == 0) return 'اليوم';
+    if (days == 1) return 'غدًا';
+    if (days == 2) return 'بعد يومين';
+    if (days <= 10) return 'بعد $days أيام';
+    return 'بعد $days يومًا';
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(
-          backgroundColor: _primaryColor,
-          foregroundColor: Colors.white,
-          title: const Text('إدارة مكتب المحاماة'),
-          actions: [
-            IconButton(
-              onPressed: _loadStats,
-              icon: const Icon(Icons.refresh),
-              tooltip: 'تحديث',
-            ),
-            IconButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => SettingsScreen(
-                      fullName: widget.fullName,
-                      email: widget.email,
-                    ),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.settings_outlined),
-              tooltip: 'الإعدادات',
-            ),
-            IconButton(
-              onPressed: () {
-                Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(
-                    builder: (context) => const LoginScreen(),
-                  ),
-                  (route) => false,
-                );
-              },
-              icon: const Icon(Icons.logout),
-              tooltip: 'تسجيل الخروج',
-            ),
-          ],
-        ),
-        body: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1100),
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          children: [
+            _buildHeader(context),
+            const SizedBox(height: 52),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'مرحبًا بك، ${widget.fullName}',
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold,
-                      color: _primaryColor,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    widget.email,
-                    textDirection: TextDirection.ltr,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  const Text(
-                    'نظرة عامة',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            _error!,
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: _loadStats,
-                          child: const Text('إعادة المحاولة'),
-                        ),
-                      ],
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final columns = constraints.maxWidth >= 700
-                          ? 4
-                          : constraints.maxWidth >= 450
-                              ? 2
-                              : 1;
-
-                      final cardWidth =
-                          (constraints.maxWidth - (columns - 1) * 16) /
-                              columns;
-
-                      return Wrap(
-                        spacing: 16,
-                        runSpacing: 16,
-                        children: [
-                          _buildStatCard(
-                            width: cardWidth,
-                            title: 'العملاء',
-                            value: _statValue(_clientsCount),
-                            icon: Icons.people_outline,
-                          ),
-                          _buildStatCard(
-                            width: cardWidth,
-                            title: 'إجمالي القضايا',
-                            value: _statValue(_casesCount),
-                            icon: Icons.gavel_outlined,
-                          ),
-                          _buildStatCard(
-                            width: cardWidth,
-                            title: 'القضايا الجارية',
-                            value: _statValue(_activeCasesCount),
-                            icon: Icons.folder_open_outlined,
-                          ),
-                          _buildStatCard(
-                            width: cardWidth,
-                            title: 'المواعيد القادمة',
-                            value: _statValue(_upcomingCount),
-                            icon: Icons.calendar_month_outlined,
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 32),
-                  const Text(
+                  if (_fromCache) OfflineBanner(savedAt: _cacheTime),
+                  if (_error != null) _buildErrorBanner(),
+                  _sectionHeader(
                     'المواعيد القادمة',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    onViewAll: () => widget.onOpenTab(3),
                   ),
-                  const SizedBox(height: 16),
-                  _buildUpcomingAppointments(),
-                  const SizedBox(height: 32),
-                  const Text(
-                    'الوصول السريع',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
+                  const SizedBox(height: 10),
+                  _buildUpcomingSection(),
+                  const SizedBox(height: 24),
+                  _sectionHeader(
+                    'تذكيرات مهمة',
+                    onViewAll: () => widget.onOpenTab(2),
                   ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 16,
-                    runSpacing: 16,
-                    children: [
-                      _buildActionCard(
-                        title: 'إدارة العملاء',
-                        icon: Icons.people_outline,
-                        onTap: () => _openScreen(const ClientsScreen()),
-                      ),
-                      _buildActionCard(
-                        title: 'إدارة القضايا',
-                        icon: Icons.gavel_outlined,
-                        onTap: () => _openScreen(
-                          CasesScreen(lawyerId: widget.lawyerId),
-                        ),
-                      ),
-                      _buildActionCard(
-                        title: 'إدارة المواعيد',
-                        icon: Icons.calendar_month_outlined,
-                        onTap: () => _openScreen(const AppointmentsScreen()),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(height: 10),
+                  _buildRemindersSection(),
+                  const SizedBox(height: 24),
                 ],
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildUpcomingAppointments() {
-    if (_isLoading) {
-      return const Card(
-        color: Colors.white,
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(child: CircularProgressIndicator()),
-        ),
-      );
-    }
-
-    if (_upcomingAppointments.isEmpty) {
-      return const Card(
-        color: Colors.white,
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Center(child: Text('لا توجد مواعيد قادمة')),
-        ),
-      );
-    }
-
-    return Card(
-      color: Colors.white,
-      elevation: 1,
-      child: Column(
-        children: [
-          for (var i = 0; i < _upcomingAppointments.length; i++) ...[
-            if (i > 0) const Divider(height: 1),
-            _buildUpcomingTile(_upcomingAppointments[i]),
           ],
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildUpcomingTile(Map<String, dynamic> appointment) {
-    final fullCase = appointment['fullCase'];
-    final client = fullCase is Map ? fullCase['client'] : null;
-    final clientName =
-        client is Map ? (client['fullName'] ?? '').toString() : '';
-    final caseNumber =
-        fullCase is Map ? (fullCase['caseNumber'] ?? '').toString() : '';
+  Widget _buildHeader(BuildContext context) {
+    final topPadding = MediaQuery.of(context).padding.top;
 
-    final details = [
-      if (clientName.isNotEmpty) clientName,
-      if (caseNumber.isNotEmpty) 'قضية $caseNumber',
-    ].join(' • ');
-
-    final time = _formatTime(appointment['appointmentTime']);
-
-    return ListTile(
-      leading: const CircleAvatar(
-        backgroundColor: Color(0xFFE7EEF3),
-        child: Icon(Icons.event_note_outlined, color: _primaryColor),
-      ),
-      title: Text(
-        (appointment['description'] ?? '').toString(),
-        style: const TextStyle(fontWeight: FontWeight.w600),
-      ),
-      subtitle: details.isEmpty ? null : Text(details),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          Text(
-            _formatDate(appointment['appointmentDate']),
-            style: const TextStyle(fontWeight: FontWeight.bold),
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: EdgeInsets.fromLTRB(20, topPadding + 20, 20, 76),
+          decoration: const BoxDecoration(
+            color: AppColors.primary,
+            borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
           ),
-          if (time.isNotEmpty)
-            Text(time, style: const TextStyle(color: Colors.grey)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatCard({
-    required double width,
-    required String title,
-    required String value,
-    required IconData icon,
-  }) {
-    return SizedBox(
-      width: width,
-      child: Card(
-        color: Colors.white,
-        elevation: 1,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Icon(icon, size: 30, color: _primaryColor),
-              const SizedBox(height: 16),
-              Text(title, style: const TextStyle(color: Colors.grey)),
-              const SizedBox(height: 8),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
+              _Avatar(name: widget.fullName, radius: 26),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'مرحبًا بك',
+                      style: TextStyle(color: Colors.white70, fontSize: 13),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.fullName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
         ),
+        Positioned(
+          left: 16,
+          right: 16,
+          bottom: -36,
+          child: _buildStatsCard(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatsCard() {
+    Widget divider() =>
+        Container(width: 1, height: 46, color: AppColors.border);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _StatItem(
+              icon: Icons.gavel_outlined,
+              value: _statValue(_activeCasesCount),
+              label: 'قضايا جارية',
+            ),
+          ),
+          divider(),
+          Expanded(
+            child: _StatItem(
+              icon: Icons.people_outline,
+              value: _statValue(_clientsCount),
+              label: 'عملاء',
+            ),
+          ),
+          divider(),
+          Expanded(
+            child: _StatItem(
+              icon: Icons.event_available_outlined,
+              value: _statValue(_upcomingCount),
+              label: 'مواعيد قادمة',
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildActionCard({
-    required String title,
-    required IconData icon,
-    required VoidCallback onTap,
-  }) {
-    return SizedBox(
-      width: 240,
-      child: Card(
+  Widget _sectionHeader(String title, {required VoidCallback onViewAll}) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: AppColors.primary,
+            ),
+          ),
+        ),
+        TextButton(
+          onPressed: onViewAll,
+          style: TextButton.styleFrom(foregroundColor: AppColors.accent),
+          child: const Text(
+            'عرض الكل',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildErrorBanner() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.danger.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: AppColors.danger),
+          const SizedBox(width: 10),
+          Expanded(child: Text(_error!)),
+          TextButton(onPressed: _load, child: const Text('إعادة المحاولة')),
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyCard(String text) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
         color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Center(
+        child: Text(text, style: const TextStyle(color: AppColors.textMuted)),
+      ),
+    );
+  }
+
+  Widget _loadingCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: const Center(child: CircularProgressIndicator()),
+    );
+  }
+
+  Widget _buildUpcomingSection() {
+    if (_isLoading) return _loadingCard();
+    if (_upcomingAppointments.isEmpty) {
+      return _emptyCard('لا توجد مواعيد قادمة');
+    }
+
+    return Column(
+      children: _upcomingAppointments.map(_appointmentTile).toList(),
+    );
+  }
+
+  Widget _buildRemindersSection() {
+    if (_isLoading) return _loadingCard();
+    if (_reminders.isEmpty) {
+      return _emptyCard('لا توجد جلسات قضايا خلال الأسبوعين القادمين');
+    }
+
+    return Column(children: _reminders.map(_reminderTile).toList());
+  }
+
+  Widget _appointmentTile(Map<String, dynamic> appointment) {
+    final fullCase = appointment['fullCase'];
+    final client = fullCase is Map ? fullCase['client'] : null;
+    final clientName =
+        client is Map ? (client['fullName'] ?? '').toString() : '';
+    final location = (appointment['location'] ?? '').toString();
+    final time = _formatTime(appointment['appointmentTime']);
+
+    final when = [
+      _formatDate(appointment['appointmentDate']),
+      if (time.isNotEmpty) time,
+    ].join(' - ');
+
+    final details = [
+      if (clientName.isNotEmpty) clientName,
+      if (location.isNotEmpty) location,
+    ].join(' • ');
+
+    return _InfoTile(
+      icon: Icons.event_note_outlined,
+      title: (appointment['description'] ?? '').toString(),
+      line1: when,
+      line2: details,
+      onTap: () => widget.onOpenTab(3),
+    );
+  }
+
+  Widget _reminderTile(Map<String, dynamic> legalCase) {
+    final client = legalCase['client'];
+    final clientName =
+        client is Map ? (client['fullName'] ?? '').toString() : '';
+    final court = (legalCase['courtName'] ?? '').toString();
+    final number = (legalCase['caseNumber'] ?? '').toString();
+    final title = (legalCase['title'] ?? '').toString();
+
+    final details = [
+      if (clientName.isNotEmpty) clientName,
+      if (court.isNotEmpty) court,
+    ].join(' • ');
+
+    return _InfoTile(
+      icon: Icons.notifications_active_outlined,
+      title: number.isEmpty ? 'جلسة: $title' : 'جلسة قضية $number',
+      line1:
+          '${_daysText(legalCase['_days'] as int)} • ${_formatDate(legalCase['nextHearingDate'])}',
+      line2: details,
+      onTap: () => widget.onOpenTab(2),
+    );
+  }
+}
+
+class _StatItem extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+
+  const _StatItem({
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, color: AppColors.accent, size: 24),
+        const SizedBox(height: 6),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: AppColors.primary,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12, color: AppColors.textMuted),
+        ),
+      ],
+    );
+  }
+}
+
+class _InfoTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String line1;
+  final String line2;
+  final VoidCallback onTap;
+
+  const _InfoTile({
+    required this.icon,
+    required this.title,
+    required this.line1,
+    required this.line2,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.all(20),
+          borderRadius: BorderRadius.circular(14),
+          child: Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.border),
+            ),
             child: Row(
               children: [
-                Icon(icon, size: 28, color: _primaryColor),
+                Container(
+                  width: 46,
+                  height: 46,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: AppColors.primary),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      if (line1.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          line1,
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                      if (line2.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          line2,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                const Icon(Icons.arrow_forward_ios, size: 16),
+                const Icon(Icons.chevron_left, color: AppColors.textMuted),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _Avatar extends StatelessWidget {
+  final String name;
+  final double radius;
+
+  const _Avatar({required this.name, required this.radius});
+
+  @override
+  Widget build(BuildContext context) {
+    final trimmed = name.trim();
+    final initial =
+        trimmed.isEmpty ? '؟' : String.fromCharCode(trimmed.runes.first);
+
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white24,
+      ),
+      child: CircleAvatar(
+        radius: radius,
+        backgroundColor: AppColors.accent,
+        child: Text(
+          initial,
+          style: TextStyle(
+            color: AppColors.primary,
+            fontWeight: FontWeight.bold,
+            fontSize: radius * 0.95,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// المزيد (الملف الشخصي والإعدادات وتسجيل الخروج)
+// ---------------------------------------------------------------------------
+
+class _MoreTab extends StatelessWidget {
+  final String fullName;
+  final String email;
+
+  const _MoreTab({required this.fullName, required this.email});
+
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('تسجيل الخروج'),
+          content: const Text('هل تريد تسجيل الخروج من التطبيق؟'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('إلغاء'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.danger,
+              ),
+              child: const Text('خروج'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // تسجيل الخروج بيمسح "تذكرني"
+    await SessionService.clear();
+    await LocalCache.clear();
+
+    if (!context.mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const LoginScreen()),
+      (route) => false,
+    );
+  }
+
+  void _showAbout(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          title: const Text('إدارة مكتب المحاماة'),
+          content: const Text('الإصدار 1.0.0'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('حسنًا'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final topPadding = MediaQuery.of(context).padding.top;
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.fromLTRB(20, topPadding + 28, 20, 28),
+            decoration: const BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
+            ),
+            child: Column(
+              children: [
+                _Avatar(name: fullName, radius: 38),
+                const SizedBox(height: 12),
+                Text(
+                  fullName,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  email,
+                  textDirection: TextDirection.ltr,
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: Column(
+                children: [
+                  ListTile(
+                    leading: const Icon(
+                      Icons.settings_outlined,
+                      color: AppColors.primary,
+                    ),
+                    title: const Text('الإعدادات'),
+                    trailing: const Icon(Icons.chevron_left),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => SettingsScreen(
+                            fullName: fullName,
+                            email: email,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.info_outline,
+                      color: AppColors.primary,
+                    ),
+                    title: const Text('حول التطبيق'),
+                    trailing: const Icon(Icons.chevron_left),
+                    onTap: () => _showAbout(context),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.logout,
+                      color: AppColors.danger,
+                    ),
+                    title: const Text(
+                      'تسجيل الخروج',
+                      style: TextStyle(color: AppColors.danger),
+                    ),
+                    onTap: () => _confirmLogout(context),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

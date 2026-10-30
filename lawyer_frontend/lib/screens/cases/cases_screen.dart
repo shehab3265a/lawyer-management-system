@@ -3,6 +3,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import '../../config.dart';
+import '../../data/data_repository.dart';
+import '../../widgets/offline_banner.dart';
+
 class CasesScreen extends StatefulWidget {
   final int lawyerId;
 
@@ -13,13 +17,16 @@ class CasesScreen extends StatefulWidget {
 }
 
 class _CasesScreenState extends State<CasesScreen> {
-static const String _baseUrl = 'http://localhost:8080/api';
+  static String get _baseUrl => AppConfig.baseUrl;
+
   final TextEditingController _searchController = TextEditingController();
 
   List<Map<String, dynamic>> _cases = [];
   List<Map<String, dynamic>> _clients = [];
 
   bool _isLoading = true;
+  bool _fromCache = false;
+  DateTime? _cacheTime;
   String? _error;
 
   @override
@@ -34,6 +41,16 @@ static const String _baseUrl = 'http://localhost:8080/api';
     super.dispose();
   }
 
+  bool _blockIfOffline() {
+    if (!_fromCache) return false;
+
+    _showMessage(
+      'أنت غير متصل بالخادم. الإضافة والتعديل والحذف تحتاج اتصالًا، جرّب بعد عودة الاتصال.',
+      isError: true,
+    );
+    return true;
+  }
+
   Future<void> _loadData() async {
     if (mounted) {
       setState(() {
@@ -43,29 +60,21 @@ static const String _baseUrl = 'http://localhost:8080/api';
     }
 
     try {
-      final responses = await Future.wait([
-        http.get(Uri.parse('$_baseUrl/cases')),
-        http.get(Uri.parse('$_baseUrl/clients')),
-      ]).timeout(const Duration(seconds: 15));
-
-      if (responses[0].statusCode != 200 || responses[1].statusCode != 200) {
-        throw Exception('تعذر تحميل القضايا أو العملاء');
-      }
-
-      final casesData = jsonDecode(responses[0].body) as List;
-      final clientsData = jsonDecode(responses[1].body) as List;
+      final results = await Future.wait([
+        DataRepository.getList('cases'),
+        DataRepository.getList('clients'),
+      ]);
 
       if (!mounted) return;
 
       setState(() {
-        _cases = casesData
-            .map((item) => Map<String, dynamic>.from(item as Map))
-            .toList();
-
-        _clients = clientsData
-            .map((item) => Map<String, dynamic>.from(item as Map))
-            .toList();
-
+        _cases = results[0].items;
+        _clients = results[1].items;
+        _fromCache = results[0].fromCache || results[1].fromCache;
+        _cacheTime = DataRepository.oldest(
+          results[0].savedAt,
+          results[1].savedAt,
+        );
         _isLoading = false;
       });
     } catch (_) {
@@ -141,6 +150,8 @@ static const String _baseUrl = 'http://localhost:8080/api';
   }
 
   Future<void> _showCaseDialog({Map<String, dynamic>? existingCase}) async {
+    if (_blockIfOffline()) return;
+
     if (_clients.isEmpty) {
       _showMessage('أضف عميلًا أولًا قبل تسجيل قضية', isError: true);
       return;
@@ -221,6 +232,8 @@ static const String _baseUrl = 'http://localhost:8080/api';
   }
 
   Future<void> _confirmDelete(Map<String, dynamic> legalCase) async {
+    if (_blockIfOffline()) return;
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
@@ -257,6 +270,11 @@ static const String _baseUrl = 'http://localhost:8080/api';
       if (response.statusCode == 204 || response.statusCode == 200) {
         await _loadData();
         _showMessage('تم حذف القضية');
+      } else if (response.statusCode == 409) {
+        _showMessage(
+          'لا يمكن حذف القضية لأن لها مواعيد مرتبطة. احذف مواعيدها أولًا.',
+          isError: true,
+        );
       } else {
         _showMessage(
           'فشل حذف القضية (${response.statusCode}): ${response.body}',
@@ -471,6 +489,7 @@ static const String _baseUrl = 'http://localhost:8080/api';
                           style: TextStyle(color: Colors.grey, fontSize: 15),
                         ),
                         const SizedBox(height: 24),
+                        if (_fromCache) OfflineBanner(savedAt: _cacheTime),
                         TextField(
                           controller: _searchController,
                           onChanged: (_) => setState(() {}),
